@@ -1,0 +1,431 @@
+
+Amazon product review dataset
+Source: https://www.kaggle.com/skillsmuggler/amazon-ratings
+
+Importing libraries
+import numpy as np
+import pandas as pd
+import matplotlib.pyplot as plt
+
+# %matplotlib inline
+plt.style.use("ggplot")
+
+import sklearn
+from sklearn.decomposition import TruncatedSVD
+Loading the dataset
+amazon_ratings = pd.read_csv('f:\\ratings_Beauty.csv')
+amazon_ratings = amazon_ratings.dropna()
+amazon_ratings.head()
+UserId	ProductId	Rating	Timestamp
+0	A39HTATAQ9V7YF	0205616461	5.0	1369699200
+1	A3JM6GV9MNOF9X	0558925278	3.0	1355443200
+2	A1Z513UWSAAO0F	0558925278	5.0	1404691200
+3	A1WMRR494NWEWV	0733001998	4.0	1382572800
+4	A3IAAVS479H7M7	0737104473	1.0	1274227200
+amazon_ratings.shape
+(2023070, 4)
+popular_products = pd.DataFrame(amazon_ratings.groupby('ProductId')['Rating'].count())
+most_popular = popular_products.sort_values('Rating', ascending=False)
+most_popular.head(10)
+Rating
+ProductId	
+B001MA0QY2	7533
+B0009V1YR8	2869
+B0043OYFKU	2477
+B0000YUXI0	2143
+B003V265QW	2088
+B000ZMBSPE	2041
+B003BQ6QXK	1918
+B004OHQR1Q	1885
+B00121UVU0	1838
+B000FS05VG	1589
+most_popular.head(30).plot(kind = "bar")
+<Axes: xlabel='ProductId'>
+
+Analysis:
+The above graph gives us the most popular products (arranged in descending order) sold by the business.
+
+For eaxmple, product, ID # B001MA0QY2 has sales of over 7000, the next most popular product, ID # B0009V1YR8 has sales of 3000, etc.
+
+Recommendation System - Part II
+Model-based collaborative filtering system
+Recommend items to users based on purchase history and similarity of ratings provided by other users who bought items to that of a particular customer.
+
+A model based collaborative filtering technique is closen here as it helps in making predictinfg products for a particular user by identifying patterns based on preferences from multiple user data.
+
+Utility Matrix based on products sold and user reviews
+Utility Matrix
+
+An utlity matrix is consists of all possible user-item preferences (ratings) details represented as a matrix. The utility matrix is sparce as none of the users would buy all teh items in the list, hence, most of the values are unknown.
+
+# Subset of Amazon Ratings
+
+amazon_ratings1 = amazon_ratings.head(10000)
+ratings_utility_matrix = amazon_ratings1.pivot_table(values='Rating', index='UserId', columns='ProductId', fill_value=0)
+ratings_utility_matrix.head()
+ProductId	0205616461	0558925278	0733001998	0737104473	0762451459	1304139212	1304139220	130414089X	130414643X	1304146537	...	B000052YPE	B000052YPF	B000052YPG	B000052YPH	B000052YPM	B000052YPU	B000052YPV	B000052YPY	B000052YQ0	B000052YQ2
+UserId																					
+A00205921JHJK5X9LNP42	0.0	0.0	0.0	0.0	0.0	0.0	0.0	0.0	0.0	0.0	...	0.0	0.0	0.0	0.0	0.0	0.0	0.0	0.0	0.0	0.0
+A024581134CV80ZBLIZTZ	0.0	0.0	0.0	0.0	0.0	0.0	0.0	0.0	0.0	0.0	...	0.0	0.0	0.0	0.0	0.0	0.0	0.0	0.0	0.0	0.0
+A03056581JJIOL5FSKJY7	0.0	0.0	0.0	0.0	0.0	0.0	0.0	0.0	0.0	0.0	...	0.0	0.0	0.0	0.0	0.0	0.0	0.0	0.0	0.0	0.0
+A03099101ZRK4K607JVHH	0.0	0.0	0.0	0.0	0.0	0.0	0.0	0.0	0.0	0.0	...	0.0	0.0	0.0	0.0	0.0	0.0	0.0	0.0	0.0	0.0
+A0505229A7NSH3FRXRR4	0.0	0.0	0.0	0.0	0.0	0.0	0.0	0.0	0.0	0.0	...	0.0	0.0	0.0	0.0	0.0	0.0	0.0	0.0	0.0	0.0
+5 rows × 886 columns
+
+As expected, the utility matrix obtaned above is sparce, I have filled up the unknown values wth 0.
+
+ratings_utility_matrix.shape
+(9697, 886)
+Transposing the matrix
+
+X = ratings_utility_matrix.T
+X.head()
+UserId	A00205921JHJK5X9LNP42	A024581134CV80ZBLIZTZ	A03056581JJIOL5FSKJY7	A03099101ZRK4K607JVHH	A0505229A7NSH3FRXRR4	A05492663T95KW63BR75K	A059547920Q3LZVFHLPI3	A07410232KYRFR25CIUGJ	A082796624UNM47DSAI6K	A0864963DOAY7LXGS5I6	...	AZW1HXXYAC15B	AZWRTJPN7NXT	AZWTXHXZXFAYP	AZYQEFB9Y5N22	AZZHB6U54UDYW	AZZHJZP4GQPPZ	AZZNK89PXD006	AZZOFVMQC0BJG	AZZQXL8VDCFTV	AZZTJQ7CQZUD8
+ProductId																					
+0205616461	0.0	0.0	0.0	0.0	0.0	0.0	0.0	0.0	0.0	0.0	...	0.0	0.0	0.0	0.0	0.0	0.0	0.0	0.0	0.0	0.0
+0558925278	0.0	0.0	0.0	0.0	0.0	0.0	0.0	0.0	0.0	0.0	...	0.0	0.0	0.0	0.0	0.0	0.0	0.0	0.0	0.0	0.0
+0733001998	0.0	0.0	0.0	0.0	0.0	0.0	0.0	0.0	0.0	0.0	...	0.0	0.0	0.0	0.0	0.0	0.0	0.0	0.0	0.0	0.0
+0737104473	0.0	0.0	0.0	0.0	0.0	0.0	0.0	0.0	0.0	0.0	...	0.0	0.0	0.0	0.0	0.0	0.0	0.0	0.0	0.0	0.0
+0762451459	0.0	0.0	0.0	0.0	0.0	0.0	0.0	0.0	0.0	0.0	...	0.0	0.0	0.0	0.0	0.0	0.0	0.0	0.0	0.0	0.0
+5 rows × 9697 columns
+
+X.shape
+(886, 9697)
+Unique products in subset of data
+
+X1 = X
+Decomposing the Matrix
+SVD = TruncatedSVD(n_components=10)
+decomposed_matrix = SVD.fit_transform(X)
+decomposed_matrix.shape
+(886, 10)
+Correlation Matrix
+correlation_matrix = np.corrcoef(decomposed_matrix)
+correlation_matrix.shape
+(886, 886)
+correlation_matrix
+
+Isolating Product ID # 6117036094 from the Correlation Matrix
+Assuming the customer buys Product ID # 6117036094 (randomly chosen)
+
+X.index[99]
+'6117036094'
+Index # of product ID purchased by customer
+
+i = "6117036094"
+
+product_names = list(X.index)
+product_ID = product_names.index(i)
+product_ID
+99
+Correlation for all items with the item purchased by this customer based on items rated by other customers people who bought the same product
+
+correlation_product_ID = correlation_matrix[product_ID]
+correlation_product_ID.shape
+(886,)
+Recommending top 10 highly correlated products in sequence
+Recommend = list(X.index[correlation_product_ID > 0.90])
+
+# Removes the item already bought by the customer
+Recommend.remove(i) 
+
+Recommend[0:9]
+['1403790965',
+ '360211600X',
+ '5297000963',
+ '6022600804',
+ '6175005570',
+ '7883633309',
+ '8072222120',
+ '957696718X',
+ '9628982370']
+Product Id #
+
+Here are the top 10 products to be displayed by the recommendation system to the above customer based on the purchase history of other customers in the website.
+
+Recommendation System - Part III
+For a business without any user-item purchase history, a search engine based recommendation system can be designed for users. The product recommendations can be based on textual clustering analysis given in product description.
+
+# Importing libraries
+
+from sklearn.feature_extraction.text import TfidfVectorizer, CountVectorizer
+from sklearn.neighbors import NearestNeighbors
+from sklearn.cluster import KMeans
+from sklearn.metrics import adjusted_rand_score
+Home Depot's dataset with product dataset:
+https://www.kaggle.com/c/home-depot-product-search-relevance/data
+
+Item to item based recommendation system based on product description
+Applicable when business is setting up its E-commerce website for the first time
+
+product_descriptions = pd.read_csv('product_descriptions.csv')
+product_descriptions.shape
+---------------------------------------------------------------------------
+FileNotFoundError                         Traceback (most recent call last)
+Cell In[21], line 1
+----> 1 product_descriptions = pd.read_csv('product_descriptions.csv')
+      2 product_descriptions.shape
+
+File ~\anaconda\Lib\site-packages\pandas\io\parsers\readers.py:1026, in read_csv(filepath_or_buffer, sep, delimiter, header, names, index_col, usecols, dtype, engine, converters, true_values, false_values, skipinitialspace, skiprows, skipfooter, nrows, na_values, keep_default_na, na_filter, verbose, skip_blank_lines, parse_dates, infer_datetime_format, keep_date_col, date_parser, date_format, dayfirst, cache_dates, iterator, chunksize, compression, thousands, decimal, lineterminator, quotechar, quoting, doublequote, escapechar, comment, encoding, encoding_errors, dialect, on_bad_lines, delim_whitespace, low_memory, memory_map, float_precision, storage_options, dtype_backend)
+   1013 kwds_defaults = _refine_defaults_read(
+   1014     dialect,
+   1015     delimiter,
+   (...)
+   1022     dtype_backend=dtype_backend,
+   1023 )
+   1024 kwds.update(kwds_defaults)
+-> 1026 return _read(filepath_or_buffer, kwds)
+
+File ~\anaconda\Lib\site-packages\pandas\io\parsers\readers.py:620, in _read(filepath_or_buffer, kwds)
+    617 _validate_names(kwds.get("names", None))
+    619 # Create the parser.
+--> 620 parser = TextFileReader(filepath_or_buffer, **kwds)
+    622 if chunksize or iterator:
+    623     return parser
+
+File ~\anaconda\Lib\site-packages\pandas\io\parsers\readers.py:1620, in TextFileReader.__init__(self, f, engine, **kwds)
+   1617     self.options["has_index_names"] = kwds["has_index_names"]
+   1619 self.handles: IOHandles | None = None
+-> 1620 self._engine = self._make_engine(f, self.engine)
+
+File ~\anaconda\Lib\site-packages\pandas\io\parsers\readers.py:1880, in TextFileReader._make_engine(self, f, engine)
+   1878     if "b" not in mode:
+   1879         mode += "b"
+-> 1880 self.handles = get_handle(
+   1881     f,
+   1882     mode,
+   1883     encoding=self.options.get("encoding", None),
+   1884     compression=self.options.get("compression", None),
+   1885     memory_map=self.options.get("memory_map", False),
+   1886     is_text=is_text,
+   1887     errors=self.options.get("encoding_errors", "strict"),
+   1888     storage_options=self.options.get("storage_options", None),
+   1889 )
+   1890 assert self.handles is not None
+   1891 f = self.handles.handle
+
+File ~\anaconda\Lib\site-packages\pandas\io\common.py:873, in get_handle(path_or_buf, mode, encoding, compression, memory_map, is_text, errors, storage_options)
+    868 elif isinstance(handle, str):
+    869     # Check whether the filename is to be opened in binary mode.
+    870     # Binary mode does not support 'encoding' and 'newline'.
+    871     if ioargs.encoding and "b" not in ioargs.mode:
+    872         # Encoding
+--> 873         handle = open(
+    874             handle,
+    875             ioargs.mode,
+    876             encoding=ioargs.encoding,
+    877             errors=errors,
+    878             newline="",
+    879         )
+    880     else:
+    881         # Binary mode
+    882         handle = open(handle, ioargs.mode)
+
+FileNotFoundError: [Errno 2] No such file or directory: 'product_descriptions.csv'
+Checking for missing values
+# Missing values
+
+product_descriptions = product_descriptions.dropna()
+product_descriptions.shape
+product_descriptions.head()
+product_uid	product_description
+0	100001	Not only do angles make joints stronger, they ...
+1	100002	BEHR Premium Textured DECKOVER is an innovativ...
+2	100003	Classic architecture meets contemporary design...
+3	100004	The Grape Solar 265-Watt Polycrystalline PV So...
+4	100005	Update your bathroom with the Delta Vero Singl...
+product_descriptions1 = product_descriptions.head(500)
+# product_descriptions1.iloc[:,1]
+
+product_descriptions1["product_description"].head(10)
+0    Not only do angles make joints stronger, they ...
+1    BEHR Premium Textured DECKOVER is an innovativ...
+2    Classic architecture meets contemporary design...
+3    The Grape Solar 265-Watt Polycrystalline PV So...
+4    Update your bathroom with the Delta Vero Singl...
+5    Achieving delicious results is almost effortle...
+6    The Quantum Adjustable 2-Light LED Black Emerg...
+7    The Teks #10 x 1-1/2 in. Zinc-Plated Steel Was...
+8    Get the House of Fara 3/4 in. x 3 in. x 8 ft. ...
+9    Valley View Industries Metal Stakes (4-Pack) a...
+Name: product_description, dtype: object
+Feature extraction from product descriptions
+Converting the text in product description into numerical data for analysis
+
+vectorizer = TfidfVectorizer(stop_words='english')
+X1 = vectorizer.fit_transform(product_descriptions1["product_description"])
+X1
+<500x8932 sparse matrix of type '<class 'numpy.float64'>'
+	with 34817 stored elements in Compressed Sparse Row format>
+Visualizing product clusters in subset of data
+# Fitting K-Means to the dataset
+
+X=X1
+
+kmeans = KMeans(n_clusters = 10, init = 'k-means++')
+y_kmeans = kmeans.fit_predict(X)
+plt.plot(y_kmeans, ".")
+plt.show()
+
+Top words in each cluster based on product description
+# # Optimal clusters is 
+
+true_k = 10
+
+model = KMeans(n_clusters=true_k, init='k-means++', max_iter=100, n_init=1)
+model.fit(X1)
+
+print("Top terms per cluster:")
+order_centroids = model.cluster_centers_.argsort()[:, ::-1]
+terms = vectorizer.get_feature_names()
+for i in range(true_k):
+    print("Cluster %d:" % i),
+    for ind in order_centroids[i, :10]:
+        print(' %s' % terms[ind]),
+    print
+Top terms per cluster:
+Cluster 0:
+ water
+ toilet
+ tank
+ bowl
+ gal
+ flush
+ easy
+ piece
+ heater
+ clean
+Cluster 1:
+ light
+ watt
+ volt
+ led
+ power
+ fan
+ bulb
+ bulbs
+ lighting
+ home
+Cluster 2:
+ painted
+ wood
+ insulation
+ ft
+ primed
+ 65
+ proposition
+ nbsp
+ residents
+ california
+Cluster 3:
+ water
+ concrete
+ use
+ ft
+ metal
+ used
+ provides
+ designed
+ high
+ fiberglass
+Cluster 4:
+ patio
+ frame
+ steel
+ collection
+ fabric
+ available
+ outdoor
+ dining
+ style
+ furniture
+Cluster 5:
+ storage
+ lbs
+ cooking
+ shelves
+ easy
+ cycle
+ commercial
+ floor
+ use
+ installation
+Cluster 6:
+ door
+ nickel
+ easy
+ design
+ wood
+ cabinet
+ features
+ install
+ helps
+ proposition
+Cluster 7:
+ air
+ snow
+ power
+ cooling
+ ft
+ speed
+ control
+ blower
+ unit
+ engine
+Cluster 8:
+ paint
+ metal
+ screw
+ drill
+ hole
+ screws
+ azek
+ tool
+ trim
+ storage
+Cluster 9:
+ post
+ rug
+ fence
+ vary
+ landscape
+ slightly
+ recycled
+ product
+ plastic
+ easy
+Predicting clusters based on key search words
+cutting tool
+
+print("Cluster ID:")
+Y = vectorizer.transform(["cutting tool"])
+prediction = model.predict(Y)
+print(prediction)
+Cluster ID:
+[8]
+spray paint
+
+print("Cluster ID:")
+Y = vectorizer.transform(["spray paint"])
+prediction = model.predict(Y)
+print(prediction)
+Cluster ID:
+[8]
+steel drill
+
+print("Cluster ID:")
+Y = vectorizer.transform(["steel drill"])
+prediction = model.predict(Y)
+print(prediction)
+Cluster ID:
+[8]
+In case a word appears in multiple clusters, the algorithm chooses the cluster with the highest frequency of occurance of the word.
+
+water
+
+print("Cluster ID:")
+Y = vectorizer.transform(["water"])
+prediction = model.predict(Y)
+print(prediction)
+Cluster ID:
+[0]
